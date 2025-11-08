@@ -90,7 +90,12 @@ else:
 def recommend_tracks(track_ids_input, n_recommend=10, allowed_artists=None, verbose=True):
     """
     Get recommendations for multiple input tracks using weighted mean aggregation.
-    Optionally restrict recommendations to tracks created by artists in `allowed_artists`.
+
+    If `allowed_artists` is provided:
+      - Only consider tracks whose artist string matches any of the allowed artist hints.
+      - Among those candidates, pick the n_recommend closest by Euclidean distance to the
+        aggregated vector (no post-filtering of a global neighbor list).
+
     Ensures no duplicate tracks even if they differ only by genre.
     """
     # Normalize input type
@@ -107,43 +112,116 @@ def recommend_tracks(track_ids_input, n_recommend=10, allowed_artists=None, verb
             valid_indices.append(np.where(track_ids == track_id)[0][0])
 
     if len(valid_indices) == 0:
+        if verbose:
+            print("No valid input tracks found.")
         return []
 
-    # Weighted mean vector of input tracks
+    # Aggregated vector of input tracks
     mean_vector = np.mean(features_norm[valid_indices], axis=0)
 
-    # Query more neighbors than needed to handle duplicates + filtering
-    distances, neighbors_idx = knn_model.kneighbors([mean_vector], n_neighbors=n_recommend * 5)
-
-    # Prepare sorting (ascending distance = more similar)
-    neighbors_distances = list(zip(neighbors_idx[0], distances[0]))
-    neighbors_distances.sort(key=lambda x: x[1])
-
-    # Prepare artist filter if provided
-    allowed_artists_set = None
-    if allowed_artists:
-        # Lowercase for robust matching
-        allowed_artists_set = {a.strip().lower() for a in allowed_artists}
-
+    # Prepare de-dup + exclusion sets
     recommended_tracks = []
     seen_tracks = set()  # track_name||artists
     input_tracks_set = set(
         df.loc[np.array(valid_indices), 'track_name'] + "||" + df.loc[np.array(valid_indices), 'artists']
     )
 
+    # ----------------------------
+    # Case 1: Artist constraint provided
+    # ----------------------------
+    if allowed_artists:
+        # Normalize artist hints
+        allowed_artists_set = {a.strip().lower() for a in allowed_artists if isinstance(a, str) and a.strip()}
+
+        if len(allowed_artists_set) == 0:
+            if verbose:
+                print("No valid allowed_artists provided, falling back to unconstrained kNN.")
+            allowed_artists = None  # fall through to unconstrained case below
+        else:
+            # Build candidate mask: only rows whose artists string contains any allowed artist hint
+            artists_lower = df['artists'].astype(str).str.lower()
+            candidate_mask = artists_lower.apply(
+                lambda s: any(a in s for a in allowed_artists_set)
+            )
+            candidate_indices = np.where(candidate_mask.to_numpy())[0]
+
+            if len(candidate_indices) == 0:
+                if verbose:
+                    print("No candidates match the allowed_artists constraint, falling back to unconstrained kNN.")
+            else:
+                # Compute Euclidean distances ONLY on candidate tracks
+                cand_vectors = features_norm[candidate_indices]
+                # Euclidean distance to mean_vector
+                diff = cand_vectors - mean_vector
+                dists = np.linalg.norm(diff, axis=1)
+
+                # Sort candidate indices by distance
+                sorted_pos = np.argsort(dists)
+
+                for pos in sorted_pos:
+                    idx = candidate_indices[pos]
+                    row = df.iloc[idx]
+                    key = row['track_name'] + "||" + row['artists']
+
+                    # Skip if seen or is one of the input tracks
+                    if key in seen_tracks or key in input_tracks_set:
+                        continue
+
+                    recommended_tracks.append(row['track_id'])
+                    seen_tracks.add(key)
+
+                    if len(recommended_tracks) >= n_recommend:
+                        break
+
+                if verbose:
+                    print(f"Using constrained search over {len(candidate_indices)} candidate tracks.")
+
+                if len(recommended_tracks) > 0:
+                    # We’re done: we already used only the allowed-artist subset.
+                    if verbose:
+                        print(f"Generated {len(recommended_tracks)} constrained recommendations.")
+                    if verbose:
+                        print("\n--- Input Tracks ---")
+                        input_info = df[df['track_id'].isin(track_ids_input)].drop_duplicates(
+                            subset=['track_name', 'artists']
+                        )
+                        for _, r in input_info.iterrows():
+                            print(
+                                f"{r['track_name']} | Artist: {r['artists']} | Genre: {r['track_genre']} "
+                                f"| Popularity: {r['popularity']} | Danceability: {r['danceability']} "
+                                f"| Energy: {r['energy']} | Tempo: {r['tempo']}"
+                            )
+
+                        print("\n--- Recommended Tracks ---")
+                        for tid in recommended_tracks:
+                            r = df[df['track_id'] == tid].iloc[0]
+                            print(
+                                f"{r['track_name']} | Artist: {r['artists']} | Genre: {r['track_genre']} "
+                                f"| Popularity: {r['popularity']} | Danceability: {r['danceability']} "
+                                f"| Energy: {r['energy']} | Tempo: {r['tempo']}"
+                            )
+
+                    return recommended_tracks
+
+                # If we reach here, we had candidates but all were excluded as input/dupes;
+                # fall back to unconstrained behavior below.
+                if verbose:
+                    print("All candidate tracks were filtered out (input/duplicates). Falling back to unconstrained kNN.")
+
+    # ----------------------------
+    # Case 2: No valid artist constraint → original global kNN
+    # ----------------------------
+    distances, neighbors_idx = knn_model.kneighbors([mean_vector], n_neighbors=n_recommend * 5)
+
+    neighbors_distances = list(zip(neighbors_idx[0], distances[0]))
+    neighbors_distances.sort(key=lambda x: x[1])  # ascending = closer
+
     for idx, dist in neighbors_distances:
         row = df.iloc[idx]
         key = row['track_name'] + "||" + row['artists']
 
-        # Skip if already seen or is one of the input tracks
         if key in seen_tracks or key in input_tracks_set:
             continue
-
-        # If we have an artist hint, only accept tracks from those artists
-        if allowed_artists_set is not None:
-            artists_lower = str(row['artists']).lower()
-            if not any(a in artists_lower for a in allowed_artists_set):
-                continue
 
         recommended_tracks.append(row['track_id'])
         seen_tracks.add(key)
@@ -152,9 +230,10 @@ def recommend_tracks(track_ids_input, n_recommend=10, allowed_artists=None, verb
             break
 
     if verbose:
-        # Print input tracks info
         print("\n--- Input Tracks ---")
-        input_info = df[df['track_id'].isin(track_ids_input)].drop_duplicates(subset=['track_name', 'artists'])
+        input_info = df[df['track_id'].isin(track_ids_input)].drop_duplicates(
+            subset=['track_name', 'artists']
+        )
         for _, r in input_info.iterrows():
             print(
                 f"{r['track_name']} | Artist: {r['artists']} | Genre: {r['track_genre']} "
@@ -162,7 +241,6 @@ def recommend_tracks(track_ids_input, n_recommend=10, allowed_artists=None, verb
                 f"| Energy: {r['energy']} | Tempo: {r['tempo']}"
             )
 
-        # Print recommended tracks info
         print("\n--- Recommended Tracks ---")
         for tid in recommended_tracks:
             r = df[df['track_id'] == tid].iloc[0]
@@ -173,6 +251,7 @@ def recommend_tracks(track_ids_input, n_recommend=10, allowed_artists=None, verb
             )
 
     return recommended_tracks
+
 
 
 
