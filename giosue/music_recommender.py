@@ -30,6 +30,7 @@ df['loud_tempo'] = df['loudness'] * df['tempo']
 for f in ['danceability','energy','valence','tempo']:
     df[f + '_sq'] = df[f] ** 2
 
+
 all_features = numeric_features + ['dance_energy','loud_tempo'] + \
                [f + '_sq' for f in ['danceability','energy','valence','tempo']]
 
@@ -69,7 +70,7 @@ track_ids = df['track_id'].values
 # 2️⃣ Build kNN model
 # ----------------------------
 N_NEIGHBORS = 1000
-knn_model = NearestNeighbors(n_neighbors=N_NEIGHBORS, metric='euclidean', algorithm='auto')
+knn_model = NearestNeighbors(n_neighbors=N_NEIGHBORS, metric='cosine', algorithm='auto')
 knn_model.fit(features_norm)
 
 # ----------------------------
@@ -85,7 +86,7 @@ print("Enhanced model trained and saved successfully!")
 # ----------------------------
 # 4️⃣ Recommendation function (multi-track aggregation)
 # ----------------------------
-def recommend_tracks(track_ids_input, n_recommend=10,print=True):
+def recommend_tracks(track_ids_input, target_artists, n_recommend=10, prints=True):
     """
     Get recommendations for multiple input tracks using weighted mean aggregation.
     Ensures no duplicate tracks even if they differ only by genre.
@@ -120,9 +121,14 @@ def recommend_tracks(track_ids_input, n_recommend=10,print=True):
     for idx, dist in neighbors_distances:
         row = df.iloc[idx]
         key = row['track_name'] + "||" + row['artists']
+        
         if key not in seen_tracks and key not in input_tracks_set:
-            recommended_tracks.append(row['track_id'])
-            seen_tracks.add(key)
+            if target_artists is None or any(a.lower() in row['artists'].lower() for a in target_artists):
+                recommended_tracks.append(row['track_id'])
+                seen_tracks.add(key)
+                if len(recommended_tracks) >= n_recommend:
+                    break
+
         if len(recommended_tracks) >= n_recommend:
             break
 
