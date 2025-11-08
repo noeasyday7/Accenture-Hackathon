@@ -66,22 +66,30 @@ features_norm = normalize(all_features_weighted, norm='l2')
 # Track IDs
 track_ids = df['track_id'].values
 
-# ----------------------------
-# 2️⃣ Build kNN model
-# ----------------------------
-N_NEIGHBORS = 1000
-knn_model = NearestNeighbors(n_neighbors=N_NEIGHBORS, metric='cosine', algorithm='auto')
-knn_model.fit(features_norm)
+if __name__ == "__main__":
+    # ----------------------------
+    # 2️⃣ Build kNN model
+    # ----------------------------
+    N_NEIGHBORS = 1000
+    knn_model = NearestNeighbors(n_neighbors=N_NEIGHBORS, metric='euclidean', algorithm='auto')
+    knn_model.fit(features_norm)
 
-# ----------------------------
-# 3️⃣ Save model and metadata
-# ----------------------------
-joblib.dump(knn_model, "giosue/model/music_knn_model_enhanced.joblib")
-joblib.dump(scaler, "giosue/model/music_scaler_enhanced.joblib")
-joblib.dump(encoder, "giosue/model/music_genre_encoder_enhanced.joblib")
-np.save("giosue/model/track_ids.npy", track_ids)
+    # ----------------------------
+    # 3️⃣ Save model and metadata
+    # ----------------------------
+    joblib.dump(knn_model, "giosue/model/music_knn_model_enhanced.joblib")
+    joblib.dump(scaler, "giosue/model/music_scaler_enhanced.joblib")
+    joblib.dump(encoder, "giosue/model/music_genre_encoder_enhanced.joblib")
+    np.save("giosue/model/track_ids.npy", track_ids)
 
-print("Enhanced model trained and saved successfully!")
+    print("Enhanced model trained and saved successfully!")
+
+else:
+    # Load saved model and metadata
+    knn_model = joblib.load("giosue/model/music_knn_model_enhanced.joblib")
+    scaler = joblib.load("giosue/model/music_scaler_enhanced.joblib")
+    encoder = joblib.load("giosue/model/music_genre_encoder_enhanced.joblib")
+    track_ids = np.load("giosue/model/track_ids.npy", allow_pickle=True)
 
 # ----------------------------
 # 4️⃣ Recommendation function (multi-track aggregation)
@@ -108,7 +116,7 @@ def recommend_tracks(track_ids_input, target_artists, n_recommend=10, prints=Tru
     mean_vector = np.mean(features_norm[valid_indices], axis=0)
     
     # Query more neighbors than needed to handle duplicates
-    distances, neighbors_idx = knn_model.kneighbors([mean_vector], n_neighbors=n_recommend*3)
+    distances, neighbors_idx = knn_model.kneighbors([mean_vector], n_neighbors=n_recommend*10)
     
     # Sort by distance
     neighbors_distances = list(zip(neighbors_idx[0], distances[0]))
@@ -121,7 +129,7 @@ def recommend_tracks(track_ids_input, target_artists, n_recommend=10, prints=Tru
     for idx, dist in neighbors_distances:
         row = df.iloc[idx]
         key = row['track_name'] + "||" + row['artists']
-        
+
         if key not in seen_tracks and key not in input_tracks_set:
             if target_artists is None or any(a.lower() in row['artists'].lower() for a in target_artists):
                 recommended_tracks.append(row['track_id'])
@@ -132,7 +140,7 @@ def recommend_tracks(track_ids_input, target_artists, n_recommend=10, prints=Tru
         if len(recommended_tracks) >= n_recommend:
             break
 
-    if print:
+    if prints:
         # Print input tracks info
         print("\n--- Input Tracks ---")
         input_info = df[df['track_id'].isin(track_ids_input)].drop_duplicates(subset=['track_name','artists'])
