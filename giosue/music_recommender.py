@@ -85,7 +85,7 @@ print("Enhanced model trained and saved successfully!")
 # ----------------------------
 # 4️⃣ Recommendation function (multi-track aggregation)
 # ----------------------------
-def recommend_tracks(track_ids_input, n_recommend=10):
+def recommend_tracks(track_ids_input, n_recommend=10,print=True):
     """
     Get recommendations for multiple input tracks using weighted mean aggregation.
     Ensures no duplicate tracks even if they differ only by genre.
@@ -126,19 +126,19 @@ def recommend_tracks(track_ids_input, n_recommend=10):
         if len(recommended_tracks) >= n_recommend:
             break
 
-    # ----------------------------
-    # Print input tracks info
-    print("\n--- Input Tracks ---")
-    input_info = df[df['track_id'].isin(track_ids_input)].drop_duplicates(subset=['track_name','artists'])
-    for _, row in input_info.iterrows():
-        print(f"{row['track_name']} | Artist: {row['artists']} | Genre: {row['track_genre']} | Popularity: {row['popularity']} | Danceability: {row['danceability']} | Energy: {row['energy']} | Tempo: {row['tempo']}")
-    
-    # Print recommended tracks info
-    print("\n--- Recommended Tracks ---")
-    for tid in recommended_tracks:
-        row = df[df['track_id'] == tid].iloc[0]  # pick first row
-        print(f"{row['track_name']} | Artist: {row['artists']} | Genre: {row['track_genre']} | Popularity: {row['popularity']} | Danceability: {row['danceability']} | Energy: {row['energy']} | Tempo: {row['tempo']}")
-    
+    if print:
+        # Print input tracks info
+        print("\n--- Input Tracks ---")
+        input_info = df[df['track_id'].isin(track_ids_input)].drop_duplicates(subset=['track_name','artists'])
+        for _, row in input_info.iterrows():
+            print(f"{row['track_name']} | Artist: {row['artists']} | Genre: {row['track_genre']} | Popularity: {row['popularity']} | Danceability: {row['danceability']} | Energy: {row['energy']} | Tempo: {row['tempo']}")
+        
+        # Print recommended tracks info
+        print("\n--- Recommended Tracks ---")
+        for tid in recommended_tracks:
+            row = df[df['track_id'] == tid].iloc[0]  # pick first row
+            print(f"{row['track_name']} | Artist: {row['artists']} | Genre: {row['track_genre']} | Popularity: {row['popularity']} | Danceability: {row['danceability']} | Energy: {row['energy']} | Tempo: {row['tempo']}")
+        
     return recommended_tracks
 
 
