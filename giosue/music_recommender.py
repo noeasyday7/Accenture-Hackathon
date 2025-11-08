@@ -15,8 +15,8 @@ df['explicit'] = df['explicit'].astype(int)
 
 # Numeric features
 numeric_features = ['popularity','explicit','danceability','energy',
-                    'loudness','mode','speechiness','acousticness',
-                    'instrumentalness','liveness','tempo']
+                    'loudness','speechiness','acousticness',
+                    'instrumentalness','liveness','tempo','mode']
 # removed features: 'key','valence','time_signature','duration_ms',
 
 # ----------------------------
@@ -52,7 +52,7 @@ all_features_array[:, :len(all_features)] = scaler.fit_transform(all_features_ar
 # Assign higher weight to key features: danceability, energy, valence, tempo
 weights = np.ones(all_features_array.shape[1])
 feature_indices = {f:i for i,f in enumerate(all_features)}
-for key_f in ['danceability','energy','valence','tempo','dance_energy','loud_tempo','acousticness','instrumentalness']:
+for key_f in ['danceability','energy','valence','tempo','acousticness','instrumentalness','dance_energy','loud_tempo']: # removed ones: 
     if key_f in feature_indices:
         weights[feature_indices[key_f]] = 2  # weight important features 3x
 all_features_weighted = all_features_array * weights
@@ -69,7 +69,7 @@ track_ids = df['track_id'].values
 # 2️⃣ Build kNN model
 # ----------------------------
 N_NEIGHBORS = 1000
-knn_model = NearestNeighbors(n_neighbors=N_NEIGHBORS, metric='cosine', algorithm='auto')
+knn_model = NearestNeighbors(n_neighbors=N_NEIGHBORS, metric='euclidean', algorithm='auto')
 knn_model.fit(features_norm)
 
 # ----------------------------
