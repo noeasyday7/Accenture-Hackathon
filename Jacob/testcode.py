@@ -31,7 +31,7 @@ playlists['playlist'] = playlists['playlist'].apply(parse_playlist)
 # ----------------------------
 # Evaluation config
 # ----------------------------
-num_iterations = 5      # how many times to run per playlist
+num_iterations = 200      # how many times to run per playlist
 n_recommended = 5       # how many tracks to recommend per run
 hidden_k = 5            # how many tracks to hide per playlist
 
@@ -69,8 +69,10 @@ for playlist in valid_playlists:
             train_set,
             n_recommend=n_recommended,
             allowed_artists=test_artists,
-            verbose=False
+            verbose=True
         )
+
+        print(len(recommended_tracks))
 
         # Progress display
         current_count += 1
